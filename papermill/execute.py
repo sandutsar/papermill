@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
-
-import copy
-import nbformat
 from pathlib import Path
 
-from .log import logger
-from .exceptions import PapermillExecutionError
-from .iorw import get_pretty_path, local_file_io_cwd, load_notebook_node, write_ipynb
+import nbformat
+
 from .engines import papermill_engines
-from .utils import chdir, nb_kernel_name
+from .exceptions import PapermillExecutionError
+from .inspection import _infer_parameters
+from .iorw import get_pretty_path, load_notebook_node, local_file_io_cwd, write_ipynb
+from .log import logger
 from .parameterize import add_builtin_parameters, parameterize_notebook, parameterize_path
+from .utils import chdir
 
 
 def execute_notebook(
@@ -28,16 +27,16 @@ def execute_notebook(
     start_timeout=60,
     report_mode=False,
     cwd=None,
-    **engine_kwargs
+    **engine_kwargs,
 ):
     """Executes a single notebook locally.
 
     Parameters
     ----------
-    input_path : str or Path
-        Path to input notebook
-    output_path : str or Path
-        Path to save executed notebook
+    input_path : str or Path or nbformat.NotebookNode
+        Path to input notebook or NotebookNode object of notebook
+    output_path : str or Path or None
+        Path to save executed notebook. If None, no file will be saved
     parameters : dict, optional
         Arbitrary keyword arguments to pass to the notebook parameters
     engine_name : str, optional
@@ -81,18 +80,28 @@ def execute_notebook(
     input_path = parameterize_path(input_path, path_parameters)
     output_path = parameterize_path(output_path, path_parameters)
 
-    logger.info("Input Notebook:  %s" % get_pretty_path(input_path))
-    logger.info("Output Notebook: %s" % get_pretty_path(output_path))
+    logger.info(f"Input Notebook:  {get_pretty_path(input_path)}")
+    logger.info(f"Output Notebook: {get_pretty_path(output_path)}")
     with local_file_io_cwd():
         if cwd is not None:
-            logger.info("Working directory: {}".format(get_pretty_path(cwd)))
+            logger.info(f"Working directory: {get_pretty_path(cwd)}")
 
         nb = load_notebook_node(input_path)
 
         # Parameterize the Notebook.
         if parameters:
+            parameter_predefined = _infer_parameters(nb, name=kernel_name, language=language)
+            parameter_predefined = {p.name for p in parameter_predefined}
+            for p in parameters:
+                if p not in parameter_predefined:
+                    logger.warning(f"Passed unknown parameter: {p}")
             nb = parameterize_notebook(
-                nb, parameters, report_mode, kernel_name=kernel_name, language=language
+                nb,
+                parameters,
+                report_mode,
+                kernel_name=kernel_name,
+                language=language,
+                engine_name=engine_name,
             )
 
         nb = prepare_notebook_metadata(nb, input_path, output_path, report_mode)
@@ -100,8 +109,8 @@ def execute_notebook(
         nb = remove_error_markers(nb)
 
         if not prepare_only:
-            # Fetch out the name from the notebook document
-            kernel_name = nb_kernel_name(nb, kernel_name)
+            # Dropdown to the engine to fetch the kernel name from the notebook document
+            kernel_name = papermill_engines.nb_kernel_name(engine_name=engine_name, nb=nb, name=kernel_name)
             # Execute the Notebook in `cwd` if it is set
             with chdir(cwd):
                 nb = papermill_engines.execute_notebook_with_engine(
@@ -115,7 +124,7 @@ def execute_notebook(
                     start_timeout=start_timeout,
                     stdout_file=stdout_file,
                     stderr_file=stderr_file,
-                    **engine_kwargs
+                    **engine_kwargs,
                 )
 
             # Check for errors first (it saves on error before raising)
@@ -141,9 +150,6 @@ def prepare_notebook_metadata(nb, input_path, output_path, report_mode=False):
     report_mode : bool, optional
        Flag to set report mode
     """
-    # Copy the nb object to avoid polluting the input
-    nb = copy.deepcopy(nb)
-
     # Hide input if report-mode is set to True.
     if report_mode:
         for cell in nb.cells:
@@ -160,30 +166,21 @@ def prepare_notebook_metadata(nb, input_path, output_path, report_mode=False):
 
 ERROR_MARKER_TAG = "papermill-error-cell-tag"
 
-ERROR_STYLE = (
-    'style="color:red; font-family:Helvetica Neue, Helvetica, Arial, sans-serif; font-size:2em;"'
-)
+ERROR_STYLE = 'style="color:red; font-family:Helvetica Neue, Helvetica, Arial, sans-serif; font-size:2em;"'
 
 ERROR_MESSAGE_TEMPLATE = (
-    '<span ' + ERROR_STYLE + '>'
-    "An Exception was encountered at '<a href=\"#papermill-error-cell\">In [%s]</a>'."
-    '</span>'
+    f"<span {ERROR_STYLE}>An Exception was encountered at '<a href=\"#papermill-error-cell\">In [%s]</a>'.</span>"
 )
 
 ERROR_ANCHOR_MSG = (
-    '<span id="papermill-error-cell" ' + ERROR_STYLE + '>'
+    f'<span id="papermill-error-cell" {ERROR_STYLE}>'
     'Execution using papermill encountered an exception here and stopped:'
     '</span>'
 )
 
 
 def remove_error_markers(nb):
-    nb = copy.deepcopy(nb)
-    nb.cells = [
-        cell
-        for cell in nb.cells
-        if ERROR_MARKER_TAG not in cell.metadata.get("tags", [])
-    ]
+    nb.cells = [cell for cell in nb.cells if ERROR_MARKER_TAG not in cell.metadata.get("tags", [])]
     return nb
 
 
@@ -199,22 +196,39 @@ def raise_for_execution_errors(nb, output_path):
     """
     error = None
     for index, cell in enumerate(nb.cells):
-        if cell.get("outputs") is None:
-            continue
+        has_sys_exit = False
+        # check if there is any cell error output
+        if "outputs" in cell:
+            for output in cell.outputs:
+                if output.output_type == "error":
+                    if output.ename == "SystemExit" and (output.evalue == "" or output.evalue == "0"):
+                        has_sys_exit = True
+                        continue
+                    error = PapermillExecutionError(
+                        cell_index=index,
+                        exec_count=cell.execution_count,
+                        source=cell.source,
+                        ename=output.ename,
+                        evalue=output.evalue,
+                        traceback=output.traceback,
+                    )
+                    break
 
-        for output in cell.outputs:
-            if output.output_type == "error":
-                if output.ename == "SystemExit" and (output.evalue == "" or output.evalue == "0"):
-                    continue
-                error = PapermillExecutionError(
-                    cell_index=index,
-                    exec_count=cell.execution_count,
-                    source=cell.source,
-                    ename=output.ename,
-                    evalue=output.evalue,
-                    traceback=output.traceback,
-                )
-                break
+        # handle the CellExecutionError exceptions raised that didn't produce a cell error output
+        if (
+            error is None
+            and not has_sys_exit
+            and cell.get("metadata", {}).get("papermill", {}).get("exception") is True
+        ):
+            error = PapermillExecutionError(
+                cell_index=index,
+                exec_count=cell.execution_count,
+                source=cell.source,
+                ename="CellExecutionError",
+                evalue="",
+                traceback=[],
+            )
+            break
 
     if error:
         # Write notebook back out with the Error Message at the top of the Notebook, and a link to
@@ -224,6 +238,9 @@ def raise_for_execution_errors(nb, output_path):
         error_msg_cell.metadata['tags'] = [ERROR_MARKER_TAG]
         error_anchor_cell = nbformat.v4.new_markdown_cell(ERROR_ANCHOR_MSG)
         error_anchor_cell.metadata['tags'] = [ERROR_MARKER_TAG]
+
+        # Upgrade the Notebook to the latest v4 before writing into it
+        nb = nbformat.v4.upgrade(nb)
 
         # put the anchor before the cell with the error, before all the indices change due to the
         # heading-prepending

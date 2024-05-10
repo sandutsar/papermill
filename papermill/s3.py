@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 """Utilities for working with S3."""
 
-import os
-
 import logging
+import os
 import threading
 import zlib
 
@@ -12,11 +10,10 @@ from boto3.session import Session
 from .exceptions import AwsError
 from .utils import retry
 
-
 logger = logging.getLogger('papermill.s3')
 
 
-class Bucket(object):
+class Bucket:
     """
     Represents a Bucket of storage on S3
 
@@ -35,12 +32,10 @@ class Bucket(object):
 
     def list(self, prefix='', delimiter=None):
         """Limits a list of Bucket's objects based on prefix and delimiter."""
-        return self.service._list(
-            bucket=self.name, prefix=prefix, delimiter=delimiter, objects=True
-        )
+        return self.service._list(bucket=self.name, prefix=prefix, delimiter=delimiter, objects=True)
 
 
-class Prefix(object):
+class Prefix:
     """
     Represents a prefix used in an S3 Bucket.
 
@@ -62,13 +57,13 @@ class Prefix(object):
         self.service = service
 
     def __str__(self):
-        return 's3://{}/{}'.format(self.bucket.name, self.name)
+        return f's3://{self.bucket.name}/{self.name}'
 
     def __repr__(self):
         return self.__str__()
 
 
-class Key(object):
+class Key:
     """
     A key that represents a unique object in an S3 Bucket.
 
@@ -107,7 +102,7 @@ class Key(object):
         self.etag = etag
         if last_modified:
             try:
-                self.last_modified = last_modified.isoformat().split('+')[0] + '.000Z'
+                self.last_modified = f"{last_modified.isoformat().split('+')[0]}.000Z"
             except ValueError:
                 self.last_modified = last_modified
         self.storage_class = storage_class
@@ -115,13 +110,13 @@ class Key(object):
         self.service = service
 
     def __str__(self):
-        return 's3://{}/{}'.format(self.bucket.name, self.name)
+        return f's3://{self.bucket.name}/{self.name}'
 
     def __repr__(self):
         return self.__str__()
 
 
-class S3(object):
+class S3:
     """
     Wraps S3.
 
@@ -163,14 +158,13 @@ class S3(object):
         return self._clean(bucket).split('/', 1)[0]
 
     def _clean(self, name):
-        if name.startswith('s3n:'):
-            name = 's3:' + name[4:]
+        name = self._clean_s3(name)
         if self._is_s3(name):
             return name[5:]
         return name
 
     def _clean_s3(self, name):
-        return 's3:' + name[4:] if name.startswith('s3n:') else name
+        return f"s3:{name[4:]}" if name.startswith('s3n:') else name
 
     def _get_key(self, name):
         if isinstance(name, Key):
@@ -191,7 +185,7 @@ class S3(object):
         keys=False,
         objects=False,
         page_size=1000,
-        **kwargs
+        **kwargs,
     ):
         assert bucket is not None, 'You must specify a bucket to list'
 
@@ -213,9 +207,7 @@ class S3(object):
             return item['Prefix']
 
         for page in page_iterator:
-            locations = sorted(
-                [i for i in page.get('Contents', []) + page.get('CommonPrefixes', [])], key=sort
-            )
+            locations = sorted([i for i in page.get('Contents', []) + page.get('CommonPrefixes', [])], key=sort)
 
             for item in locations:
                 if objects or keys:
@@ -233,7 +225,7 @@ class S3(object):
                         yield Prefix(bucket, item['Prefix'], service=self)
                 else:
                     prefix = item['Key'] if 'Key' in item else item['Prefix']
-                    yield 's3://{}/{}'.format(bucket, prefix)
+                    yield f's3://{bucket}/{prefix}'
 
     def _put(self, source, dest, num_callbacks=10, policy='bucket-owner-full-control', **kwargs):
         key = self._get_key(dest)
@@ -247,9 +239,7 @@ class S3(object):
             obj.upload_file(source, ExtraArgs={'ACL': policy})
         return key
 
-    def _put_string(
-        self, source, dest, num_callbacks=10, policy='bucket-owner-full-control', **kwargs
-    ):
+    def _put_string(self, source, dest, num_callbacks=10, policy='bucket-owner-full-control', **kwargs):
         key = self._get_key(dest)
         obj = self.s3.Object(key.bucket.name, key.name)
 
@@ -270,7 +260,7 @@ class S3(object):
         self,
         source,
         buffersize=None,
-        memsize=2 ** 24,
+        memsize=2**24,
         compressed=False,
         encoding='UTF-8',
         raw=False,
@@ -297,7 +287,7 @@ class S3(object):
             # try to read the file multiple times
             for i in range(100):
                 obj = self.s3.Object(key.bucket.name, key.name)
-                buffersize = buffersize if buffersize is not None else 2 ** 20
+                buffersize = buffersize if buffersize is not None else 2**20
 
                 if not size:
                     size = obj.content_length
@@ -310,7 +300,7 @@ class S3(object):
                 if size == 0:
                     break
 
-                r = obj.get(Range="bytes={}-".format(bytes_read))
+                r = obj.get(Range=f"bytes={bytes_read}-")
 
                 try:
                     while bytes_read < size:
@@ -355,7 +345,7 @@ class S3(object):
                 if err:
                     raise Exception
                 else:
-                    raise AwsError('Failed to fully read [%s]' % source.name)
+                    raise AwsError(f'Failed to fully read [{source.name}]')
 
             if undecoded:
                 assert encoding is not None  # only time undecoded is set
@@ -442,12 +432,10 @@ class S3(object):
             buf += block
             if '\n' in buf:
                 ret, buf = buf.rsplit('\n', 1)
-                for line in ret.split('\n'):
-                    yield line
+                yield from ret.split('\n')
 
         lines = buf.split('\n')
-        for line in lines[:-1]:
-            yield line
+        yield from lines[:-1]
 
         # only yield the last line if the line has content in it
         if lines[-1]:

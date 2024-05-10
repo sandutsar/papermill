@@ -1,11 +1,12 @@
 """Utilities for working with Azure blob storage"""
-import re
 import io
+import re
 
+from azure.identity import EnvironmentCredential
 from azure.storage.blob import BlobServiceClient
 
 
-class AzureBlobStore(object):
+class AzureBlobStore:
     """
     Represents a Blob of storage on Azure
 
@@ -17,22 +18,23 @@ class AzureBlobStore(object):
         - write
     """
 
-    def _blob_service_client(self, account_name, sas_token):
-
+    def _blob_service_client(self, account_name, sas_token=None):
         blob_service_client = BlobServiceClient(
-            "{account}.blob.core.windows.net".format(account=account_name), sas_token
+            account_url=f"{account_name}.blob.core.windows.net",
+            credential=sas_token or EnvironmentCredential(),
         )
+
         return blob_service_client
 
     @classmethod
     def _split_url(self, url):
         """
-        see: https://docs.microsoft.com/en-us/azure/storage/common/storage-dotnet-shared-access-signature-part-1  # noqa: E501
+        see: https://docs.microsoft.com/en-us/azure/storage/common/storage-dotnet-shared-access-signature-part-1
         abs://myaccount.blob.core.windows.net/sascontainer/sasblob.txt?sastoken
         """
-        match = re.match(r"abs://(.*)\.blob\.core\.windows\.net\/(.*)\/(.*)\?(.*)$", url)
+        match = re.match(r"abs://(.*)\.blob\.core\.windows\.net\/(.*?)\/([^\?]*)\??(.*)$", url)
         if not match:
-            raise Exception("Invalid azure blob url '{0}'".format(url))
+            raise Exception(f"Invalid azure blob url '{url}'")
         else:
             params = {
                 "account": match.group(1),

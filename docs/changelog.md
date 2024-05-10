@@ -2,8 +2,63 @@
 
 ## Unreleased
 
+- Changed parameter inspection to raise the same error messages as other pathways for missing kernel name and language
+
+## 2.6.0
+
+- bring back strip_color and remove ANSI color codes from exception traceback [#791](https://github.com/nteract/papermill/pull/791)
+- cleaned up documentation [#790](https://github.com/nteract/papermill/pull/790)
+- prevent error override, fix traceback type [#788](https://github.com/nteract/papermill/pull/788)
+- Upgrade tests to moto v5 [#779](https://github.com/nteract/papermill/pull/779)
+- raise PapermillExecutionError when CellExecutionError is raised without cell error output [#786](https://github.com/nteract/papermill/pull/786)
+- make progress_bar param accept a dict [#778](https://github.com/nteract/papermill/pull/778)
+- Fix nbformat to 5.2.0 to cell None type [#770](https://github.com/nteract/papermill/pull/770)
+- Use f-strings where possible [#762](https://github.com/nteract/papermill/pull/762)
+- Unmark wheel as universal [#764](https://github.com/nteract/papermill/pull/764)
+
+## 2.5.0
+
+- Added support for python 3.11 and 3.12 [PR #733](https://github.com/nteract/papermill/pull/733)
+  - Dropped support for 3.7
+- ABS added support for using a Service principle via EnvCreds [PR #728](https://github.com/nteract/papermill/pull/728)
+- Added “github” extra deps. to the “all” extra [PR #715](https://github.com/nteract/papermill/pull/715)
+- Github actions updated to latest version [PR #732](https://github.com/nteract/papermill/pull/732)
+- Added a warning if non set parameter is passed through CLI [PR #701](https://github.com/nteract/papermill/pull/701)
+- Skip black formatting when encountering attribute errors [PR #699](https://github.com/nteract/papermill/pull/699)
+- Removed forced deepcopy of notebook objects [PR #694](https://github.com/nteract/papermill/pull/694)
+- Always update notebook version on execute [PR #691](https://github.com/nteract/papermill/pull/691)
+- Set minimum version for tenacity [PR #682](https://github.com/nteract/papermill/pull/682)
+- Removed use of ansiwrap [PR #681](https://github.com/nteract/papermill/pull/681)
+- Added pre-commit hook [PR #678](https://github.com/nteract/papermill/pull/678)
+- Added dependabot for GHA [PR #677](https://github.com/nteract/papermill/pull/677)
+
+## 2.4.0
+
+- Add tracking cell executions with cell descriptions [PR #650](https://github.com/nteract/papermill/pull/650)
+- Fixed Azure Blob URI matching for prefixes [PR #654](https://github.com/nteract/papermill/pull/654)
+- Updates HDFS handler to use `PyArrow.fs.HadoopFileSystm` [PR #658](https://github.com/nteract/papermill/pull/658)
+- Drop support for Python 3.6 [PR #666](https://github.com/nteract/papermill/pull/666)
+- CI Build fixes [PR #664](https://github.com/nteract/papermill/pull/664)
+- Updated mock references in tests [PR #668](https://github.com/nteract/papermill/pull/668)
+- Added option for not writing any output ipynb file [PR #669](https://github.com/nteract/papermill/pull/669)
+- Allow custom kernel name and language in engine registration [PR #676](https://github.com/nteract/papermill/pull/676)
+- Allow for direct input of NotebookNode objects [PR #670](https://github.com/nteract/papermill/pull/670)
+- Removed deepcopy of input nodes [PR #673](https://github.com/nteract/papermill/pull/673)
+- Fixed failing tests for windows [PR #672](https://github.com/nteract/papermill/pull/672)
+- Implemented bash translator [PR #674](https://github.com/nteract/papermill/pull/674)
+
+## 2.3.4
+
+- Add read handler for GitHub notebooks [PR #622](https://github.com/nteract/papermill/pull/622)
 - Add GitHub Actions for CI
-- Builds updated for python 3.9
+- Add cell description to tqdm [PR #565](https://github.com/nteract/papermill/pull/565)
+- Update builds for python 3.9 and 3.10
+- Update file read to not fail early with boto empty file exception [PR #614](https://github.com/nteract/papermill/pull/614)
+- Support new version of gcsfs [PR #624](https://github.com/nteract/papermill/pull/624)
+- Fix an issue where the `PapermillExecutionError` can be pickled but will
+  not be unpicklable [PR #629](https://github.com/nteract/papermill/pull/624)
+- Update documentation build and theme
+- Remove deprecated `pyarrow.hdfs.connect` call from `iorw.py` [PR #615](https://github.com/nteract/papermill/pull/615)
 - Remove support for python 3.5
 - Remove travis CI
 
@@ -133,8 +188,8 @@ We made it to our [1.0 milestone goals](https://github.com/nteract/papermill/mil
 
 - Input and output paths can now reference input parameters. `my_nb_{nb_type}.ipynb out_{nb_type}.ipynb -p nb_type test` will substitute values into the paths passed in with python format application patterns.
 - `read_notebook`, `read_notebooks`, `record`, and `display` api functions are now removed.
-- [upstream] ipywidgets are now supported. See [nbconvert docs](https://nbconvert.readthedocs.io/en/latest/execute_api.html#widget-state) for details.
-- [upstream] notebook executions which run out of memory no longer hang indefinitely when the kernel dies.
+- \[upstream\] ipywidgets are now supported. See [nbconvert docs](https://nbconvert.readthedocs.io/en/latest/execute_api.html#widget-state) for details.
+- \[upstream\] notebook executions which run out of memory no longer hang indefinitely when the kernel dies.
 
 ## 0.19.1
 
@@ -181,7 +236,7 @@ pip install papermill[all]
 
 - Optional IO extensions are now separated into different dependencies.
 - Added gs:// optional dependency for google cloud storage support.
-- null json fields in parmaeters now translate correctly to equivilent fields in each supported language
+- null json fields in parameters now translate correctly to equivalent fields in each supported language
 
 ### Fixes
 
@@ -197,7 +252,7 @@ pip install papermill[all]
 ### Features
 
 - Log level can now be set with `--log-level`
-- The working directory of papermill can be set with the `--cwd` option. This will set the executing context of the kernel but not impact input/output paths. `papermill --cwd foo bar/input_nb.ipynb bar/output_nb.ipynb` would make the notebook able to reference files in the `foo` directoy without `../foo` but still save the output notebook in the `bar` directory.
+- The working directory of papermill can be set with the `--cwd` option. This will set the executing context of the kernel but not impact input/output paths. `papermill --cwd foo bar/input_nb.ipynb bar/output_nb.ipynb` would make the notebook able to reference files in the `foo` directory without `../foo` but still save the output notebook in the `bar` directory.
 - Tox has been added for testing papermill. This makes it easier to catch linting and manifest issues without waiting for a failed Travis build.
 
 ### Fixes
@@ -231,7 +286,7 @@ pip install papermill[all]
 - Added engines abstraction and command line argument
 - Moved some nbconvert wrappers out of papermill
 - Added Azure blob storage support
-- Fixed botocore upgrade comptability issue (all version of boto now supported again)
+- Fixed botocore upgrade compatibility issue (all version of boto now supported again)
 - Removed whitelisted environment variable assignment
 
 ## 0.15.1
@@ -243,7 +298,7 @@ pip install papermill[all]
 - Warnings added when an unexpected file extension is used
 - Papermill version is visible to the CLI
 - More messages us logging module now (and can be filtered accordingly)
-- Binder link from README was greatly improved to demostrate papermill features
+- Binder link from README was greatly improved to demonstrate papermill features
 
 ## 0.15.0
 
@@ -290,7 +345,7 @@ pip install papermill[all]
 ## 0.12.6
 
 - Changed CLI outputs from papermill messaging to stderr
-- Changed IOResolvers to perseve ordering of definition in resolving paths
+- Changed IOResolvers to persevere ordering of definition in resolving paths
 
 ## 0.12.5
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 #
 # papermill documentation build configuration file, created by
 # sphinx-quickstart on Mon Jan 15 09:50:01 2018.
@@ -37,7 +36,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
     'myst_parser',
-    'sphinx_copybutton'
+    'sphinx_copybutton',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -73,7 +72,7 @@ release = papermill.__version__
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line foexitr these cases.
-language = None
+language = 'python'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -133,9 +132,7 @@ latex_elements = {
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
-latex_documents = [
-    (master_doc, 'papermill.tex', 'papermill Documentation', 'nteract team', 'manual')
-]
+latex_documents = [(master_doc, 'papermill.tex', 'papermill Documentation', 'nteract team', 'manual')]
 
 
 # -- Options for manual page output ---------------------------------------
@@ -163,4 +160,4 @@ texinfo_documents = [
 ]
 
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
+intersphinx_mapping = {'python': ('https://docs.python.org/', None)}

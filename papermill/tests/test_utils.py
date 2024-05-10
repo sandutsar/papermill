@@ -1,29 +1,32 @@
-import os
-import pytest
 import warnings
-
-from unittest.mock import Mock, call
+from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import Mock, call
 
-from nbformat.v4 import new_notebook, new_code_cell
+import pytest
+from nbformat.v4 import new_code_cell, new_notebook
 
+from ..exceptions import PapermillParameterOverwriteWarning
 from ..utils import (
     any_tagged_cell,
-    retry,
     chdir,
     merge_kwargs,
     remove_args,
+    retry,
 )
-from ..exceptions import PapermillParameterOverwriteWarning
 
 
 def test_no_tagged_cell():
-    nb = new_notebook(cells=[new_code_cell('a = 2', metadata={"tags": []})],)
+    nb = new_notebook(
+        cells=[new_code_cell('a = 2', metadata={"tags": []})],
+    )
     assert not any_tagged_cell(nb, "parameters")
 
 
 def test_tagged_cell():
-    nb = new_notebook(cells=[new_code_cell('a = 2', metadata={"tags": ["parameters"]})],)
+    nb = new_notebook(
+        cells=[new_code_cell('a = 2', metadata={"tags": ["parameters"]})],
+    )
     assert any_tagged_cell(nb, "parameters")
 
 
@@ -48,10 +51,10 @@ def test_retry():
 
 
 def test_chdir():
-    old_cwd = os.getcwd()
+    old_cwd = Path.cwd()
     with TemporaryDirectory() as temp_dir:
         with chdir(temp_dir):
-            assert os.getcwd() != old_cwd
-            assert os.getcwd() == os.path.realpath(temp_dir)
+            assert Path.cwd() != old_cwd
+            assert Path.cwd() == Path(temp_dir)
 
-    assert os.getcwd() == old_cwd
+    assert Path.cwd() == old_cwd

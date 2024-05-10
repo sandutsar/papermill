@@ -4,7 +4,7 @@ import re
 from azure.datalake.store import core, lib
 
 
-class ADL(object):
+class ADL:
     """
     Represents an Azure Data Lake
 
@@ -23,7 +23,7 @@ class ADL(object):
     def _split_url(cls, url):
         match = re.match(r'adl://(.*)\.azuredatalakestore\.net\/(.*)$', url)
         if not match:
-            raise Exception("Invalid ADL url '{0}'".format(url))
+            raise Exception(f"Invalid ADL url '{url}'")
         else:
             return (match.group(1), match.group(2))
 
@@ -39,12 +39,7 @@ class ADL(object):
         """Returns a list of the files under the specified path"""
         (store_name, path) = self._split_url(url)
         adapter = self._create_adapter(store_name)
-        return [
-            "adl://{store_name}.azuredatalakestore.net/{path_to_child}".format(
-                store_name=store_name, path_to_child=path_to_child
-            )
-            for path_to_child in adapter.ls(path)
-        ]
+        return [f"adl://{store_name}.azuredatalakestore.net/{path_to_child}" for path_to_child in adapter.ls(path)]
 
     def read(self, url):
         """Read storage at a given url"""

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """"
 setup.py
 
@@ -10,8 +9,8 @@ https://github.com/pypa/sampleproject
 
 """
 import os
-from setuptools import setup
 
+from setuptools import setup
 
 local_path = os.path.dirname(__file__)
 # Fix for tox which manipulates execution pathing
@@ -21,7 +20,7 @@ here = os.path.abspath(local_path)
 
 
 def version():
-    with open(here + '/papermill/version.py', 'r') as ver:
+    with open(f"{here}/papermill/version.py") as ver:
         for line in ver.readlines():
             if line.startswith('version ='):
                 return line.split(' = ')[-1].strip()[1:-1]
@@ -29,7 +28,7 @@ def version():
 
 
 def read(fname):
-    with open(fname, 'r') as fhandle:
+    with open(fname) as fhandle:
         return fhandle.read()
 
 
@@ -44,9 +43,12 @@ azure_reqs = read_reqs('azure.txt', folder='requirements')
 gcs_reqs = read_reqs('gcs.txt', folder='requirements')
 hdfs_reqs = read_reqs('hdfs.txt', folder='requirements')
 github_reqs = read_reqs('github.txt', folder='requirements')
+docs_only_reqs = read_reqs('docs.txt', folder='requirements')
 black_reqs = ['black >= 19.3b0']
-all_reqs = s3_reqs + azure_reqs + gcs_reqs + hdfs_reqs + black_reqs
-dev_reqs = read_reqs('dev.txt', folder='requirements') + all_reqs
+all_reqs = s3_reqs + azure_reqs + gcs_reqs + hdfs_reqs + github_reqs + black_reqs
+docs_reqs = all_reqs + docs_only_reqs
+# Temporarily remove hdfs_reqs from dev deps until the pyarrow package is available for Python 3.12
+dev_reqs = read_reqs('dev.txt', folder='requirements') + s3_reqs + azure_reqs + gcs_reqs + black_reqs  # all_reqs
 extras_require = {
     "test": dev_reqs,
     "dev": dev_reqs,
@@ -56,7 +58,8 @@ extras_require = {
     "gcs": gcs_reqs,
     "hdfs": hdfs_reqs,
     "github": github_reqs,
-    "black": black_reqs
+    "black": black_reqs,
+    "docs": docs_reqs,
 }
 
 # Get the long description from the README file
@@ -66,7 +69,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
     name='papermill',
     version=version(),
-    description='Parametrize and run Jupyter and nteract Notebooks',
+    description='Parameterize and run Jupyter and nteract Notebooks',
     author='nteract contributors',
     author_email='nteract@googlegroups.com',
     license='BSD',
@@ -76,7 +79,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/nteract/papermill',
     packages=['papermill'],
-    python_requires='>=3.6',
+    python_requires='>=3.8',
     install_requires=read_reqs('requirements.txt'),
     extras_require=extras_require,
     entry_points={'console_scripts': ['papermill = papermill.__main__:papermill']},
@@ -93,9 +96,10 @@ setup(
         'License :: OSI Approved :: BSD License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9'
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
 )

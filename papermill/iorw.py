@@ -1,21 +1,16 @@
-# -*- coding: utf-8 -*-
-
-import io
+import fnmatch
+import json
 import os
 import sys
-import json
-import yaml
-import fnmatch
-import nbformat
-import requests
 import warnings
-import entrypoints
-
 from contextlib import contextmanager
 
+import entrypoints
+import nbformat
+import requests
+import yaml
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from . import __version__
 from .exceptions import (
     PapermillException,
     PapermillRateLimitException,
@@ -24,6 +19,7 @@ from .exceptions import (
 )
 from .log import logger
 from .utils import chdir
+from .version import version as __version__
 
 try:
     from .s3 import S3
@@ -51,13 +47,10 @@ except ImportError:
     GCSFileSystem = missing_dependency_generator("gcsfs", "gcs")
 
 try:
-    try:
-        from pyarrow.fs import HadoopFileSystem
-    except ImportError:
-        # Attempt the older package import pattern in case we're using an old dep version.
-        from pyarrow import HadoopFileSystem
+    from pyarrow.fs import FileSelector, HadoopFileSystem
 except ImportError:
     HadoopFileSystem = missing_dependency_generator("pyarrow", "hdfs")
+
 try:
     from github import Github
 except ImportError:
@@ -88,7 +81,7 @@ except NameError:
     FileNotFoundError = IOError
 
 
-class PapermillIO(object):
+class PapermillIO:
     '''
     The holder which houses any io system registered with the system.
     This object is used in a singleton manner to save and load particular
@@ -99,48 +92,14 @@ class PapermillIO(object):
         self.reset()
 
     def read(self, path, extensions=['.ipynb', '.json']):
-        if path == '-':
-            return sys.stdin.read()
-
-        if not fnmatch.fnmatch(os.path.basename(path).split('?')[0], '*.*'):
-            warnings.warn(
-                "the file is not specified with any extension : " + os.path.basename(path)
-            )
-        elif not any(
-            fnmatch.fnmatch(os.path.basename(path).split('?')[0], '*' + ext) for ext in extensions
-        ):
-            warnings.warn(
-                "The specified input file ({}) does not end in one of {}".format(path, extensions)
-            )
         # Handle https://github.com/nteract/papermill/issues/317
-        notebook_metadata = self.get_handler(path).read(path)
+        notebook_metadata = self.get_handler(path, extensions).read(path)
         if isinstance(notebook_metadata, (bytes, bytearray)):
             return notebook_metadata.decode('utf-8')
         return notebook_metadata
 
     def write(self, buf, path, extensions=['.ipynb', '.json']):
-        if path == '-':
-            try:
-                return sys.stdout.buffer.write(buf.encode('utf-8'))
-            except AttributeError:
-                # Originally required by https://github.com/nteract/papermill/issues/420
-                # Support Buffer.io objects
-                return sys.stdout.write(buf.encode('utf-8'))
-
-            return sys.stdout.buffer.write(buf.encode('utf-8'))
-
-        # Usually no return object here
-        if not fnmatch.fnmatch(os.path.basename(path).split('?')[0], '*.*'):
-            warnings.warn(
-                "the file is not specified with any extension : " + os.path.basename(path)
-            )
-        elif not any(
-            fnmatch.fnmatch(os.path.basename(path).split('?')[0], '*' + ext) for ext in extensions
-        ):
-            warnings.warn(
-                "The specified output file ({}) does not end in one of {}".format(path, extensions)
-            )
-        return self.get_handler(path).write(buf, path)
+        return self.get_handler(path, extensions).write(buf, path)
 
     def listdir(self, path):
         return self.get_handler(path).listdir(path)
@@ -160,7 +119,37 @@ class PapermillIO(object):
         for entrypoint in entrypoints.get_group_all("papermill.io"):
             self.register(entrypoint.name, entrypoint.load())
 
-    def get_handler(self, path):
+    def get_handler(self, path, extensions=None):
+        '''Get I/O Handler based on a notebook path
+
+        Parameters
+        ----------
+        path : str or nbformat.NotebookNode or None
+        extensions : list of str, optional
+            Required file extension options for the path (if path is a string), which
+            will log a warning if there is no match. Defaults to None, which does not
+            check for any extensions
+
+        Raises
+        ------
+        PapermillException: If a valid I/O handler could not be found for the input path
+
+        Returns
+        -------
+        I/O Handler
+        '''
+        if path is None:
+            return NoIOHandler()
+
+        if isinstance(path, nbformat.NotebookNode):
+            return NotebookNodeHandler()
+
+        if extensions:
+            if not fnmatch.fnmatch(os.path.basename(path).split('?')[0], '*.*'):
+                warnings.warn(f"the file is not specified with any extension : {os.path.basename(path)}")
+            elif not any(fnmatch.fnmatch(os.path.basename(path).split('?')[0], f"*{ext}") for ext in extensions):
+                warnings.warn(f"The specified file ({path}) does not end in one of {extensions}")
+
         local_handler = None
         for scheme, handler in self._handlers:
             if scheme == 'local':
@@ -170,14 +159,12 @@ class PapermillIO(object):
                 return handler
 
         if local_handler is None:
-            raise PapermillException(
-                "Could not find a registered schema handler for: {}".format(path)
-            )
+            raise PapermillException(f"Could not find a registered schema handler for: {path}")
 
         return local_handler
 
 
-class HttpHandler(object):
+class HttpHandler:
     @classmethod
     def read(cls, path):
         return requests.get(path, headers={'Accept': 'application/json'}).text
@@ -196,16 +183,16 @@ class HttpHandler(object):
         return path
 
 
-class LocalHandler(object):
+class LocalHandler:
     def __init__(self):
         self._cwd = None
 
     def read(self, path):
         try:
             with chdir(self._cwd):
-                with io.open(path, 'r', encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     return f.read()
-        except IOError as e:
+        except OSError as e:
             try:
                 # Check if path could be a notebook passed in as a
                 # string
@@ -223,8 +210,8 @@ class LocalHandler(object):
         with chdir(self._cwd):
             dirname = os.path.dirname(path)
             if dirname and not os.path.exists(dirname):
-                raise FileNotFoundError("output folder {} doesn't exist.".format(dirname))
-            with io.open(path, 'w', encoding="utf-8") as f:
+                raise FileNotFoundError(f"output folder {dirname} doesn't exist.")
+            with open(path, 'w', encoding="utf-8") as f:
                 f.write(buf)
 
     def pretty_path(self, path):
@@ -237,7 +224,7 @@ class LocalHandler(object):
         return old_cwd
 
 
-class S3Handler(object):
+class S3Handler:
     @classmethod
     def read(cls, path):
         return "\n".join(S3().read(path))
@@ -255,7 +242,7 @@ class S3Handler(object):
         return path
 
 
-class ADLHandler(object):
+class ADLHandler:
     def __init__(self):
         self._client = None
 
@@ -278,7 +265,7 @@ class ADLHandler(object):
         return path
 
 
-class ABSHandler(object):
+class ABSHandler:
     def __init__(self):
         self._client = None
 
@@ -301,7 +288,7 @@ class ABSHandler(object):
         return path
 
 
-class GCSHandler(object):
+class GCSHandler:
     RATE_LIMIT_RETRIES = 3
     RETRY_DELAY = 1
     RETRY_MULTIPLIER = 1
@@ -327,9 +314,7 @@ class GCSHandler(object):
         @retry(
             retry=retry_if_exception_type(PapermillRateLimitException),
             stop=stop_after_attempt(self.RATE_LIMIT_RETRIES),
-            wait=wait_exponential(
-                multiplier=self.RETRY_MULTIPLIER, min=self.RETRY_DELAY, max=self.RETRY_MAX_DELAY
-            ),
+            wait=wait_exponential(multiplier=self.RETRY_MULTIPLIER, min=self.RETRY_DELAY, max=self.RETRY_MAX_DELAY),
             reraise=True,
         )
         def retry_write():
@@ -340,7 +325,7 @@ class GCSHandler(object):
                 try:
                     message = e.message
                 except AttributeError:
-                    message = "Generic exception {} raised".format(type(e))
+                    message = f"Generic exception {type(e)} raised"
                 if gs_is_retriable(e):
                     raise PapermillRateLimitException(message)
                 # Reraise the original exception without retries
@@ -352,31 +337,31 @@ class GCSHandler(object):
         return path
 
 
-class HDFSHandler(object):
+class HDFSHandler:
     def __init__(self):
         self._client = None
 
     def _get_client(self):
         if self._client is None:
-            self._client = HadoopFileSystem()
+            self._client = HadoopFileSystem(host="default")
         return self._client
 
     def read(self, path):
-        with self._get_client().open(path, 'rb') as f:
+        with self._get_client().open_input_stream(path) as f:
             return f.read()
 
     def listdir(self, path):
-        return self._get_client().ls(path)
+        return [f.path for f in self._get_client().get_file_info(FileSelector(path))]
 
     def write(self, buf, path):
-        with self._get_client().open(path, 'wb') as f:
+        with self._get_client().open_output_stream(path) as f:
             return f.write(str.encode(buf))
 
     def pretty_path(self, path):
         return path
 
 
-class GithubHandler(object):
+class GithubHandler:
     def __init__(self):
         self._client = None
 
@@ -395,7 +380,7 @@ class GithubHandler(object):
         repo_id = splits[4]
         ref_id = splits[6]
         sub_path = '/'.join(splits[7:])
-        repo = self._get_client().get_repo(org_id + '/' + repo_id)
+        repo = self._get_client().get_repo(f"{org_id}/{repo_id}")
         content = repo.get_contents(sub_path, ref=ref_id)
         return content.decoded_content
 
@@ -407,6 +392,59 @@ class GithubHandler(object):
 
     def pretty_path(self, path):
         return path
+
+
+class StreamHandler:
+    '''Handler for Stdin/Stdout streams'''
+
+    def read(self, path):
+        return sys.stdin.read()
+
+    def listdir(self, path):
+        raise PapermillException('listdir is not supported by Stream Handler')
+
+    def write(self, buf, path):
+        try:
+            return sys.stdout.buffer.write(buf.encode('utf-8'))
+        except AttributeError:
+            # Originally required by https://github.com/nteract/papermill/issues/420
+            # Support Buffer.io objects
+            return sys.stdout.write(buf.encode('utf-8'))
+
+    def pretty_path(self, path):
+        return path
+
+
+class NotebookNodeHandler:
+    '''Handler for input_path of nbformat.NotebookNode object'''
+
+    def read(self, path):
+        return nbformat.writes(path)
+
+    def listdir(self, path):
+        raise PapermillException('listdir is not supported by NotebookNode Handler')
+
+    def write(self, buf, path):
+        raise PapermillException('write is not supported by NotebookNode Handler')
+
+    def pretty_path(self, path):
+        return 'NotebookNode object'
+
+
+class NoIOHandler:
+    '''Handler for output_path of None - intended to not write anything'''
+
+    def read(self, path):
+        raise PapermillException('read is not supported by NoIOHandler')
+
+    def listdir(self, path):
+        raise PapermillException('listdir is not supported by NoIOHandler')
+
+    def write(self, buf, path):
+        return
+
+    def pretty_path(self, path):
+        return 'Notebook will not be saved'
 
 
 # Hack to make YAML loader not auto-convert datetimes
@@ -430,6 +468,7 @@ papermill_io.register("gs://", GCSHandler())
 papermill_io.register("hdfs://", HDFSHandler())
 papermill_io.register("http://github.com/", GithubHandler())
 papermill_io.register("https://github.com/", GithubHandler())
+papermill_io.register("-", StreamHandler())
 papermill_io.register_entry_points()
 
 

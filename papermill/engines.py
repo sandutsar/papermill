@@ -1,20 +1,19 @@
 """Engines to perform different roles"""
-import sys
-import copy
 import datetime
-import dateutil
-
+import sys
 from functools import wraps
+
+import dateutil
 import entrypoints
 
-from .log import logger
-from .exceptions import PapermillException
 from .clientwrap import PapermillNotebookClient
+from .exceptions import PapermillException
 from .iorw import write_ipynb
-from .utils import merge_kwargs, remove_args
+from .log import logger
+from .utils import merge_kwargs, nb_kernel_name, nb_language, remove_args
 
 
-class PapermillEngines(object):
+class PapermillEngines:
     """
     The holder which houses any engine registered with the system.
 
@@ -41,12 +40,20 @@ class PapermillEngines(object):
         """Retrieves an engine by name."""
         engine = self._engines.get(name)
         if not engine:
-            raise PapermillException("No engine named '{}' found".format(name))
+            raise PapermillException(f"No engine named '{name}' found")
         return engine
 
     def execute_notebook_with_engine(self, engine_name, nb, kernel_name, **kwargs):
         """Fetch a named engine and execute the nb object against it."""
         return self.get_engine(engine_name).execute_notebook(nb, kernel_name, **kwargs)
+
+    def nb_kernel_name(self, engine_name, nb, name=None):
+        """Fetch kernel name from the document by dropping-down into the provided engine."""
+        return self.get_engine(engine_name).nb_kernel_name(nb, name)
+
+    def nb_language(self, engine_name, nb, language=None):
+        """Fetch language from the document by dropping-down into the provided engine."""
+        return self.get_engine(engine_name).nb_language(nb, language)
 
 
 def catch_nb_assignment(func):
@@ -71,7 +78,7 @@ def catch_nb_assignment(func):
     return wrapper
 
 
-class NotebookExecutionManager(object):
+class NotebookExecutionManager:
     """
     Wrapper for execution state of a notebook.
 
@@ -88,11 +95,8 @@ class NotebookExecutionManager(object):
     COMPLETED = "completed"
     FAILED = "failed"
 
-    def __init__(
-        self, nb, output_path=None, log_output=False, progress_bar=True, autosave_cell_every=30
-    ):
-        # Deep copy the input to isolate the object being executed against
-        self.nb = copy.deepcopy(nb)
+    def __init__(self, nb, output_path=None, log_output=False, progress_bar=True, autosave_cell_every=30):
+        self.nb = nb
         self.output_path = output_path
         self.log_output = log_output
         self.start_time = None
@@ -102,10 +106,19 @@ class NotebookExecutionManager(object):
         self.last_save_time = self.now()  # Not exactly true, but simplifies testing logic
         self.pbar = None
         if progress_bar:
-            # lazy import due to implict slow ipython import
+            # lazy import due to implicit slow ipython import
             from tqdm.auto import tqdm
 
-            self.pbar = tqdm(total=len(self.nb.cells), unit="cell", desc="Executing")
+            if isinstance(progress_bar, bool):
+                self.pbar = tqdm(total=len(self.nb.cells), unit="cell", desc="Executing")
+            elif isinstance(progress_bar, dict):
+                _progress_bar = {"unit": "cell", "desc": "Executing"}
+                _progress_bar.update(progress_bar)
+                self.pbar = tqdm(total=len(self.nb.cells), **_progress_bar)
+            else:
+                raise TypeError(
+                    f"progress_bar must be instance of bool or dict, but actual type '{type(progress_bar)}'."
+                )
 
     def now(self):
         """Helper to return current UTC time"""
@@ -207,11 +220,16 @@ class NotebookExecutionManager(object):
         """
         if self.log_output:
             ceel_num = cell_index + 1 if cell_index is not None else ''
-            logger.info('Executing Cell {:-<40}'.format(ceel_num))
+            logger.info(f'Executing Cell {ceel_num:-<40}')
 
         cell.metadata.papermill['start_time'] = self.now().isoformat()
         cell.metadata.papermill["status"] = self.RUNNING
         cell.metadata.papermill['exception'] = False
+
+        # injects optional description of the current cell directly in the tqdm
+        cell_description = self.get_cell_description(cell)
+        if cell_description is not None and hasattr(self, 'pbar') and self.pbar:
+            self.pbar.set_description(f"Executing {cell_description}")
 
         self.save()
 
@@ -240,7 +258,7 @@ class NotebookExecutionManager(object):
 
         if self.log_output:
             ceel_num = cell_index + 1 if cell_index is not None else ''
-            logger.info('Ending Cell {:-<43}'.format(ceel_num))
+            logger.info(f'Ending Cell {ceel_num:-<43}')
             # Ensure our last cell messages are not buffered by python
             sys.stdout.flush()
             sys.stderr.flush()
@@ -267,9 +285,7 @@ class NotebookExecutionManager(object):
         self.end_time = self.now()
         self.nb.metadata.papermill['end_time'] = self.end_time.isoformat()
         if self.nb.metadata.papermill.get('start_time'):
-            self.nb.metadata.papermill['duration'] = (
-                self.end_time - self.start_time
-            ).total_seconds()
+            self.nb.metadata.papermill['duration'] = (self.end_time - self.start_time).total_seconds()
 
         # Cleanup cell statuses in case callbacks were never called
         for cell in self.nb.cells:
@@ -283,6 +299,17 @@ class NotebookExecutionManager(object):
 
         # Force a final sync
         self.save()
+
+    def get_cell_description(self, cell, escape_str="papermill_description="):
+        """Fetches cell description if present"""
+        if cell is None:
+            return None
+
+        cell_code = cell["source"]
+        if cell_code is None or escape_str not in cell_code:
+            return None
+
+        return cell_code.split(escape_str)[1].split()[0]
 
     def complete_pbar(self):
         """Refresh progress bar"""
@@ -300,7 +327,7 @@ class NotebookExecutionManager(object):
         self.cleanup_pbar()
 
 
-class Engine(object):
+class Engine:
     """
     Base class for engines.
 
@@ -320,7 +347,7 @@ class Engine(object):
         progress_bar=True,
         log_output=False,
         autosave_cell_every=30,
-        **kwargs
+        **kwargs,
     ):
         """
         A wrapper to handle notebook execution tasks.
@@ -352,6 +379,16 @@ class Engine(object):
         """An abstract method where implementation will be defined in a subclass."""
         raise NotImplementedError("'execute_managed_notebook' is not implemented for this engine")
 
+    @classmethod
+    def nb_kernel_name(cls, nb, name=None):
+        """Use default implementation to fetch kernel name from the notebook object"""
+        return nb_kernel_name(nb, name)
+
+    @classmethod
+    def nb_language(cls, nb, language=None):
+        """Use default implementation to fetch programming language from the notebook object"""
+        return nb_language(nb, language)
+
 
 class NBClientEngine(Engine):
     """
@@ -371,19 +408,22 @@ class NBClientEngine(Engine):
         stderr_file=None,
         start_timeout=60,
         execution_timeout=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Performs the actual execution of the parameterized notebook locally.
 
         Args:
-            nb (NotebookNode): Executable notebook object.
+            nb_man (NotebookExecutionManager): Wrapper for execution state of a notebook.
             kernel_name (str): Name of kernel to execute the notebook against.
             log_output (bool): Flag for whether or not to write notebook output to the
                                configured logger.
             start_timeout (int): Duration to wait for kernel start-up.
             execution_timeout (int): Duration to wait before failing execution (default: never).
         """
+
+        # Exclude parameters that are unused downstream
+        kwargs = remove_args(['input_path'], **kwargs)
 
         # Exclude parameters that named differently downstream
         safe_kwargs = remove_args(['timeout', 'startup_timeout'], **kwargs)

@@ -1,16 +1,15 @@
-import nbformat
 import os
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
-from mock import patch
-
-from . import get_notebook_path
+import nbformat
 
 from .. import engines
 from ..engines import NotebookExecutionManager
 from ..execute import execute_notebook
+from . import get_notebook_path
 
 
 class TestMidCellAutosave(unittest.TestCase):
@@ -20,9 +19,7 @@ class TestMidCellAutosave(unittest.TestCase):
         self.nb = nbformat.read(self.notebook_path, as_version=4)
 
     def test_autosave_not_too_fast(self):
-        nb_man = NotebookExecutionManager(
-            self.nb, output_path='test.ipynb', autosave_cell_every=0.5
-        )
+        nb_man = NotebookExecutionManager(self.nb, output_path='test.ipynb', autosave_cell_every=0.5)
         with patch.object(engines, 'write_ipynb') as write_mock:
             write_mock.reset_mock()
             assert write_mock.call_count == 0  # check that the mock is sane
@@ -49,7 +46,7 @@ class TestMidCellAutosave(unittest.TestCase):
 
     def test_end2end_autosave_slow_notebook(self):
         test_dir = tempfile.mkdtemp()
-        nb_test_executed_fname = os.path.join(test_dir, 'output_{}'.format(self.notebook_name))
+        nb_test_executed_fname = os.path.join(test_dir, f'output_{self.notebook_name}')
 
         # Count how many times it writes the file w/o autosave
         with patch.object(engines, 'write_ipynb') as write_mock:

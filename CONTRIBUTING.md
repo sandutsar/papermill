@@ -55,13 +55,13 @@ If you are contributing with documentation please jump to [building documentatio
 
 We need to install the development package before we can run the tests. If anything is confusing below, always resort to the relevant documentation.
 
-For the most basic test runs against python 3.6 use this tox subset (callable after `pip install tox`):
+For the most basic test runs against python 3.12 use this tox subset (callable after `pip install tox`):
 
 ```bash
-tox -e py36
+tox -e py312
 ```
 
-This will just execute the unittests against python 3.6 in a new virtual env. The first run will take longer to setup the virtualenv, but will be fast after that point.
+This will just execute the unittests against python 3.8 in a new virtual env. The first run will take longer to setup the virtualenv, but will be fast after that point.
 
 For a full test suite of all envs and linting checks simply run tox without any arguments
 
@@ -69,7 +69,7 @@ For a full test suite of all envs and linting checks simply run tox without any 
 tox
 ```
 
-This will require python3.6, python3.8, and python3.7 to be installed. **Note** that python 3.7 has problems with the alpha build which is the available package version on many linux distros. Local build failures with 3.7 can happen as a result (you'll see a seg fault or exist code -11).
+This will require python3.8, 3.9, 3.10, 3.11, and 3.12 to be installed.
 
 Alternavitely pytest can be used if you have an environment already setup which works or has custom packages not present in the tox build.
 
@@ -96,8 +96,8 @@ This will generate `.html` files in the `/.tox/docs_out/` directory. Once you ar
 The general workflow for this will be:
 
 1. Run local tests
-2. Pushed changes to your forked repository
-3. Open pull request to main repository
+1. Pushed changes to your forked repository
+1. Open pull request to main repository
 
 ### Run Tests Locally
 
@@ -125,17 +125,17 @@ and ensure the remotes point to your GitHub. Don't work on the main branch!
 
 1. Commit changes to local repository:
 
-    ```bash
-    git checkout -b my-feature
-    git add <updated_files>
-    git commit
-    ```
+   ```bash
+   git checkout -b my-feature
+   git add <updated_files>
+   git commit
+   ```
 
-2. Push changes to your remote repository:
+1. Push changes to your remote repository:
 
-    ```bash
-    git push -u origin my-feature
-    ```
+   ```bash
+   git push -u origin my-feature
+   ```
 
 ### Create Pull Request
 
@@ -149,6 +149,6 @@ _Note: You might want to set a reference to the main repository to fetch/merge f
 git remote add upstream https://github.com/nteract/papermill
 ```
 
-It's possible you will have conflicts between your repository and main. Here, `main` is meant to be synchronized with the ```upstream``` repository.  GitHub has some good [documentation](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/) on merging pull requests from the command line.
+It's possible you will have conflicts between your repository and main. Here, `main` is meant to be synchronized with the `upstream` repository.  GitHub has some good [documentation](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/) on merging pull requests from the command line.
 
 Happy hacking on Papermill!

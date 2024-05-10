@@ -1,13 +1,12 @@
-import nbformat
 import unittest
+from unittest.mock import call, patch
 
-from mock import call, patch
+import nbformat
 
-from . import get_notebook_path
-
-from ..log import logger
-from ..engines import NotebookExecutionManager
 from ..clientwrap import PapermillNotebookClient
+from ..engines import NotebookExecutionManager
+from ..log import logger
+from . import get_notebook_path
 
 
 class TestPapermillClientWrapper(unittest.TestCase):
